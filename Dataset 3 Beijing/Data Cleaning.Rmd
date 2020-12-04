@@ -1,0 +1,294 @@
+---
+title: "House Price Predictor"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+fontsize: 10pt
+output:
+  rmdformats::readthedown:
+    code_download: yes
+
+    df_print: paged
+    highlight: haddock
+    thumbnails: false
+    lightbox: false
+  html_document:
+    code_download: yes
+
+    df_print: paged
+    highlight: haddock
+    toc: yes
+    toc_depth: 4
+  word_document:
+    toc: yes
+    toc_depth: '4'
+  pdf_document:
+    latex_engine: xelatex
+    toc: yes
+    toc_depth: '3'
+    keep_tex: true
+header-includes:
+- \DeclareMathOperator*{\argmin}{arg\,min}
+- \newcommand*{\prob}{\mathsf{P}}
+
+urlcolor: 'blue'
+---
+
+
+
+
+
+# Introduction
+
+#### What this project about?
+<p align="justify">
+The latest research on prediction markets to further their utilization by economic
+forecasters. Thus, there is a need to predict the efficient house pricing for real estate
+customers with respect to their budgets and priorities. This project efficiently
+analyses previous market trends and price ranges, to predict future prices. This topic
+brings together the latest research on prediction markets to further their utilization
+by economic forecasters. It provides a description of prediction markets, and also
+the current markets which are useful in understanding the market which helps in
+making useful predictions.</p>
+
+<p align="justify">
+This project uses linear regression algorithm to predict prices by analyzing current
+house prices, thereby forecasting the future prices according to the user’s
+requirements. With a large amount of unstructured resources and documents, the
+Real estate industry has become a highly competitive business. The data mining
+process in such an industry provides an advantage to the developers by processing
+those data, forecasting future trends, and thus assisting them to make favorable
+knowledge-driven decisions.</p>
+
+<p align="justify">
+The main focus of this project is on data mining method and its approach to develop
+a model which not only predicts the most suitable area for a customer according to
+his\her interests, and it also recognizes the most preferred location of real estate in
+any given area by ranking them. This is used to predict a favorable location by
+ranking method. It analyses a set of locations selected by the customer. It broadly
+works on two basic phases. The first phase ranks a group of customer defined 
+locations to find an ideal area and the second phase predicts the most suitable area
+according to their requirements and interest.</p>
+
+#### About the dataset?
+
+<p align="justify">
+The dataset is of  Beijing from 2011 to 2017, fetching from Lianjia.com. It includes URL, ID, Lng, Lat, CommunityID, TradeTime, DOM(days on market), Followers, Total price, Price, Square, Living Room, number of Drawing room, Kitchen and Bathroom, Building Type, Construction time. renovation condition, building structure, Ladder ratio( which is the proportion between number of residents on the same floor and number of elevator of ladder. It describes how many ladders a resident have on average), elevator, Property rights for five years（It's related to China restricted purchase of houses policy), Subway, District, Community average price.</p>
+
+
+Most data is traded in 2011-2017, some of them is traded in Jan,2018, and some is even earlier(2010,2009)
+
+All the data was fetching from https://bj.lianjia.com/chengjiao.
+
+```{r message=FALSE, warning=FALSE}
+library(ggplot2)
+library(reshape2)
+library(tidyverse)
+library(ggmap)
+library(lubridate)
+library(dplyr)
+```
+Due to the fact that the original csv file includes Chinese characters in the " Floor " column, reading it using UTF-8 but that doesn’t help, however we can see that the floor number always comes after the space in the UTF encoding. so it’s a simple question of extracting the character that comes after the space.
+```{r message=FALSE, warning=FALSE}
+data <- read_csv("beijing.csv", locale = locale(encoding = "UTF-8")) %>% 
+              mutate(floor = str_trim(str_extract(floor,"( .*)"), side = "both"))
+# fileEncoding="latin1" to deal with wrong encoding of chinese character;
+```
+
+
+# Data Cleaning
+
+
+Data cleaning is the process of preparing data for analysis by removing or modifying data that is incorrect, incomplete, irrelevant, duplicated, or improperly formatted.This data is usually not necessary or helpful when it comes to analyzing data because it may hinder the process or provide inaccurate results. Let us look through the data for inconsistencies and clean it.
+
+```{r, echo = TRUE}
+dim(data)
+
+```
+
+The dataset has `r nrow(data)` rows and `r ncol(data)` attributes.
+
+```{r}
+str(data)
+```
+
+* url: the url which fetches the data  
+* id: the id of transaction  
+* Lng: and Lat coordinates, using the BD09 protocol.
+* Cid: community id
+* tradeTime: the time of transaction
+* DOM: active days on market.
+* followers: the number of people follow the transaction.
+* totalPrice: the total price
+* price: the average price by square
+* square: the square of house
+* livingRoom: the number of living room
+* drawingRoom: the number of drawing room
+* kitchen: the number of kitchen
+* bathroom the number of bathroom
+* floor: the height of the house. I will turn the Chinese characters to English in the next version.
+* buildingType: including tower( 1 ) , bungalow( 2 )，combination of plate and tower( 3 ), plate( 4 ).
+* constructionTime: the time of construction
+* renovationCondition: including other( 1 ), rough( 2 ),Simplicity( 3 ), hardcover( 4 )
+* buildingStructure: including unknow( 1 ), mixed( 2 ), brick and wood( 3 ), brick and concrete( 4 ),steel( 5 ) and steel-concrete composite ( 6 ).
+* ladderRatio: the proportion between number of residents on the same floor and number of elevator of ladder. It describes how many ladders a resident have on average.
+* elevator: have ( 1 ) or not have elevator( 0 )
+* fiveYearsProperty: if the owner have the property for less than 5 years,
+
+Dropping variable that has nothing to do with the analysis
+```{r}
+data <-  select(data,-id,-url)
+#should we remove cid
+```
+
+Finding the number of unique value for each attribute
+```{r}
+sapply(data, function(x){length(unique(factor(x)))})
+```
+
+converting the variable type
+
+```{r message=FALSE, warning=FALSE}
+cols <- c("Cid", "livingRoom","kitchen","bathRoom","floor",
+          "buildingType","renovationCondition","buildingStructure",
+          "elevator","fiveYearsProperty","subway","district","drawingRoom")
+
+data[cols] <- lapply(data[cols], factor) 
+data$constructionTime <- as.numeric(data$constructionTime)
+
+```
+Getting the summary of all the attributes
+```{r}
+summary(data)
+```
+
+There are missing values in some of the attribute which has to be removed. Lets check what percentage of the data is missing. so that we can decide whether to remove those value or impute the values
+
+
+```{r, echo=FALSE}
+missing_vals <- sapply(data, function(x){sum(is.na(x))})
+per_missing <- data.frame(missing_vals,percent_missing = paste0(round((missing_vals/nrow(data))*100,2),'%'))%>% arrange(desc(missing_vals))
+print(per_missing)
+```
+
+
+The graphical reprecentation of the missing value
+
+```{r}
+x1 <- map_df(data, function(x){sum(is.na(x))})
+missing <- x1 %>% gather(key = "Variable") %>% filter(value > 0) %>% mutate(value = value/nrow(data))
+ggplot(missing, aes(x = reorder(Variable, -value),y = value)) + 
+  geom_bar(stat = "identity", fill = "salmon")+
+  coord_flip()
+```
+
+This suggest that only DOM has significant amount of missing value and only DOM needs to be imputed and rest all the NA's can be removed.  
+
+Removing missing values except for DOM
+```{r}
+completeFun <- function(df, desiredCols) {
+  completeVec <- complete.cases(df[, desiredCols])
+  return(df[completeVec, ])
+}
+
+data <- completeFun(data, c("bathRoom","subway","livingRoom","floor","fiveYearsProperty",
+                            "elevator","drawingRoom","communityAverage","constructionTime"))
+```
+describing DOM
+```{r}
+des <- psych::describe(data$DOM)
+print(des)
+```
+
+The Na DOM could mean that the house may be sold in 0 days,  since the beijing 
+very fast-paced with 50% of the offers staying under 6 days on the portal!. Checking if thats the case
+```{r}
+data2 <-data[,c("tradeTime","price","DOM")]
+data2$Missing <- is.na(data2$DOM)
+data2 <- data2 %>%
+  group_by( year = year(tradeTime),Missing) %>%
+  summarise(price = mean(price))
+
+
+
+ggplot(data = data2, aes(x = year, y = price))+
+  geom_line(aes(color = Missing), size = 1)
+```
+
+This proves the missing values in DOM are missing and not houses sold in 0 days. Lets check the qurtile plot for DOM
+```{r}
+qqnorm(data$DOM)
+qqline(data$DOM)
+```
+We are going to use the median to impute the data, because the data is positively skewed
+```{r}
+data$DOM<- ifelse(is.na(data$DOM),median(data$DOM,na.rm=TRUE),data$DOM)
+missing_vals <- sapply(data, function(x){sum(is.na(x))})
+print(missing_vals)
+```
+
+
+## Cleaning factor variable
+
+```{r}
+table(data$buildingType)
+# 1908 is labled as "NaN"
+(sum(data$buildingType == "NaN")/nrow(data))*100
+data <- data[!data$buildingType == "NaN",]
+data$buildingType <- droplevels(data$buildingType)
+data$buildingType <- factor(data$buildingType,labels = c("Tower","Bungalow","Plate/Tower","Plate"))
+```
+
+```{r}
+table(data$renovationCondition)
+data$renovationCondition <- droplevels(data$renovationCondition)
+data$renovationCondition <- factor(data$renovationCondition,labels = c("Other","Rough","Simplicit","Hardcover"))
+
+```
+
+```{r}
+table(data$buildingStructure)
+data$buildingStructure <- droplevels(data$buildingStructure)
+data$buildingStructure <- factor(data$buildingStructure,labels = c("Unavailable","Mixed","Brick/Wood","Brick/Concrete",
+                                                                   "Steel","Steel/Concrete"))
+```
+
+```{r}
+data$elevator <- factor(data$elevator,labels = c("No_elevator","Has_Elevator")) 
+data$subway <- factor(data$subway,labels = c("No_Subway","Has_Subway"))
+data$fiveYearsProperty <- factor(data$fiveYearsProperty,labels = c("Ownership > 5y","Ownership < 5y"))
+
+```
+
+```{r}
+table(data$district)
+data$district <- factor(data$district,labels = c("DongCheng","FengTai","DaXing","FaXing","FangShang","ChangPing",
+                                                 "ChaoYang","HaiDian","ShiJingShan","XiCheng","TongZhou","ShunYi","MenTouGou"))
+
+```
+
+## Working with lat and log
+
+```{r}
+locations_df0 <- data.frame(lon = data$Lng, lat = data$Lat)
+locations_df <- locations_df0 %>% group_by(lon,lat) %>% mutate(count = n()) %>% arrange(count)%>%select(lon,lat,count)
+locations_df <- as_tibble(distinct(locations_df))
+locations_sf <- sf::st_as_sf(locations_df, coords = c("lon", "lat"), crs = 4326)
+#mapview::mapview(locations_sf,cex="count",label="count")
+```
+
+
+
+
+
+# Conclusion
+
+
+
+\footnotesize
+
+```{r, echo = FALSE, results='hold'}
+options(width = 100)
+cat("R Session Info:\n")
+sessionInfo()
+```
+
+
