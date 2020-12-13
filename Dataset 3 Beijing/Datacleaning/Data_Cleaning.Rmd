@@ -88,7 +88,7 @@ library(dplyr)
 ```
 Due to the fact that the original csv file includes Chinese characters in the " Floor " column, reading it using UTF-8 but that doesn’t help, however we can see that the floor number always comes after the space in the UTF encoding. so it’s a simple question of extracting the character that comes after the space.
 ```{r message=FALSE, warning=FALSE}
-data <- read_csv("beijing.csv", locale = locale(encoding = "UTF-8")) %>% 
+data <- read_csv("../beijing.csv", locale = locale(encoding = "UTF-8")) %>% 
               mutate(floor = str_trim(str_extract(floor,"( .*)"), side = "both"))
 # fileEncoding="latin1" to deal with wrong encoding of chinese character;
 ```

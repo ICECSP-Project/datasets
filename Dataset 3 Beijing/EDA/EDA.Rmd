@@ -16,13 +16,15 @@ suppressMessages(
     library(ggplot2)
     library(dplyr)
     library(leaflet)
+    library(caret)
+    library(glmnet)
   }
 )
 ```
 
 ## Data
 ```{r}
-data = read.csv("beijing.csv"); dim(data)
+data = read.csv("../beijing.csv"); dim(data)
 ```
 
 ```{r}
@@ -67,5 +69,40 @@ data_mp %>%
     leaflet() %>%
     addTiles() %>%
     addMarkers(clusterOptions = markerClusterOptions()) 
+```  
+
+
+```{r}
+g = data %>% 
+  group_by(district, subway) %>%
+  summarise(
+    price = median(price)/10e3
+  ) %>%
+  ggplot(aes(x = district,
+             y = price)
+         ) + 
+  geom_bar(stat = "identity", fill = "skyblue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90)) + 
+  scale_y_continuous(name="Price (in K)") + 
+  scale_x_discrete(name="District") 
+g
 ```
+
+```{r}
+data_cleaned = read.csv("../Datacleaning/cleaned_beijing.csv")
+data_cleaned_sampled = data_cleaned[sample(10000),]
+dim(data_cleaned_sampled)
+```
+
+## Using lasso regression for feature selection
+```{r}
+predictors = model.matrix(price~., data = data_cleaned_sampled)
+response = data_cleaned_sampled$price
+lasso = glmnet(predictors, response, alpha = 6)
+cv.lasso = cv.glmnet(predictors, response, alpha = 6)
+
+plot(lasso, xvar = "lambda")
+```
+
 
